@@ -62,16 +62,16 @@ android {
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
     }
-
     signingConfigs {
-        release {
+    release {
+        if (keystorePropertiesFile.exists()) {
             keyAlias keystoreProperties['keyAlias']
             keyPassword keystoreProperties['keyPassword']
             storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
             storePassword keystoreProperties['storePassword']
         }
     }
-
+}
     packagingOptions {
         // Fixes duplicate libraries build issue,
         // when your project uses more than one plugin that depend on C++ libs.
@@ -79,11 +79,17 @@ android {
     }
 
     buildTypes {
-        release {
+     release {
+        // Only use signing config if keystore properties exist
+        if (keystorePropertiesFile.exists()) {
             signingConfig signingConfigs.release
-            minifyEnabled true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        } else {
+            // Fallback to debug signing for testing (remove for production)
+            signingConfig signingConfigs.debug
         }
+        minifyEnabled true
+        proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+    }
     }
 
 }
