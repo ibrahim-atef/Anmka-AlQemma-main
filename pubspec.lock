@@ -2059,14 +2059,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.2"
-  youtube_player_flutter:
+  youtube_player_iframe:
     dependency: "direct main"
     description:
-      name: youtube_player_flutter
-      sha256: "30f84e2f7063c56e536f507e37c1e803546842707cf58e5b5a71253b9ff9b455"
+      name: youtube_player_iframe
+      sha256: "15ec03bab4b2c2071e427091605456245b58d0d51f0942e7437675b2ff25bc09"
       url: "https://pub.dev"
     source: hosted
-    version: "9.0.4"
+    version: "5.1.2"
+  youtube_player_iframe_web:
+    dependency: transitive
+    description:
+      name: youtube_player_iframe_web
+      sha256: "743e8ce2ee77b8ea6e36ae986f0ef111b38c3119ae55ae813223ecddeb56b770"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.2"
 sdks:
   dart: ">=3.3.0 <4.0.0"
   flutter: ">=3.19.0"

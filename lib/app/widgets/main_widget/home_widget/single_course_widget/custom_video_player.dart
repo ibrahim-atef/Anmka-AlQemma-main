@@ -11,7 +11,7 @@ import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'package:screen_protector/screen_protector.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher_string.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import 'package:webinar/app/models/content_model.dart';
 import 'package:webinar/app/models/note_model.dart';
 import 'package:webinar/app/models/single_content_model.dart';
@@ -105,15 +105,23 @@ class PodVideoPlayerDev extends StatefulWidget {
   /// Extract video ID from YouTube URL
   static String? _extractVideoId(String url) {
     try {
-      final uri = Uri.parse(url);
-      if (uri.host.contains('youtube.com') || uri.host.contains('youtu.be')) {
-        if (uri.host.contains('youtu.be')) {
-          return uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
-        } else {
-          return uri.queryParameters['v'];
+      // Try different URL formats
+      String? videoId = YoutubePlayerController.convertUrlToId(url);
+      
+      // If the standard method fails, try manual extraction
+      if (videoId == null || videoId.isEmpty) {
+        final uri = Uri.parse(url);
+        if (uri.host.contains('youtube.com') || uri.host.contains('youtu.be')) {
+          if (uri.host.contains('youtu.be')) {
+            videoId = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
+          } else {
+            videoId = uri.queryParameters['v'];
+          }
         }
       }
-      return null;
+      
+      log('Extracted video ID: $videoId from URL: $url');
+      return videoId;
     } catch (e) {
       log('Error extracting video ID: $e');
       return null;
@@ -129,8 +137,7 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
   double _watermarkPositionX = 0.0;
   double _watermarkPositionY = 0.0;
   Timer? _timer;
-  WebViewController? _controller;
-  WebViewController? _fullscreenController;
+  YoutubePlayerController? _controller;
   bool _disposed = false;
   bool _isLoading = true;
   bool _isInitialized = false;
@@ -176,7 +183,7 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
       final prefs = await SharedPreferences.getInstance();
       final String? videoId = PodVideoPlayerDev._extractVideoId(widget.url);
       if (videoId != null) {
-        // For WebView, we'll save a timestamp when the video starts playing
+        // For youtube_player_iframe, we'll save a timestamp when the video starts playing
         final int currentSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
         await prefs.setInt('video_position_$videoId', currentSeconds);
         log('Saved position timestamp for video: $videoId');
@@ -186,7 +193,7 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
     }
   }
 
-  /// Initialize video player with WebView
+  /// Initialize video player with youtube_player_iframe
   void _initializeVideoPlayer() {
     final String? videoId = PodVideoPlayerDev._extractVideoId(widget.url);
     log("Video URL: ${widget.url}");
@@ -202,67 +209,20 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
     }
 
     try {
-      // Create YouTube embed URL with autoplay and controls
-      final String embedUrl = 'https://www.youtube.com/embed/$videoId?enablejsapi=1&origin=https://alqemma.anmka.com&autoplay=1&controls=1&rel=0&modestbranding=1&playsinline=1&allowfullscreen=1';
-      
-      // Initialize WebView controllers
-      _controller = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setUserAgent('Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36')
-        ..setNavigationDelegate(
-          NavigationDelegate(
-            onPageFinished: (String url) {
-              log('WebView page finished loading: $url');
-              setState(() {
-                _isLoading = false;
-                _isInitialized = true;
-              });
-              // Wait for video to be ready and set up event listeners
-              _setupVideoEventListeners();
-            },
-            onWebResourceError: (WebResourceError error) {
-              log('WebView error: ${error.description}');
-              setState(() {
-                _isLoading = false;
-                _isInitialized = false;
-              });
-            },
-            onNavigationRequest: (NavigationRequest request) {
-              // Allow navigation within YouTube domain
-              if (request.url.contains('youtube.com') || request.url.contains('youtu.be')) {
-                log('Allowing YouTube navigation to: ${request.url}');
-                return NavigationDecision.navigate;
-              }
-              log('Blocked non-YouTube navigation to: ${request.url}');
-              return NavigationDecision.prevent;
-            },
-          ),
-        )
-        ..loadRequest(Uri.parse(embedUrl));
-
-      _fullscreenController = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setUserAgent('Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36')
-        ..setNavigationDelegate(
-          NavigationDelegate(
-            onPageFinished: (String url) {
-              log('Fullscreen WebView page finished loading: $url');
-            },
-            onWebResourceError: (WebResourceError error) {
-              log('Fullscreen WebView error: ${error.description}');
-            },
-            onNavigationRequest: (NavigationRequest request) {
-              // Allow navigation within YouTube domain
-              if (request.url.contains('youtube.com') || request.url.contains('youtu.be')) {
-                log('Allowing fullscreen YouTube navigation to: ${request.url}');
-                return NavigationDecision.navigate;
-              }
-              log('Blocked non-YouTube fullscreen navigation to: ${request.url}');
-              return NavigationDecision.prevent;
-            },
-          ),
-        )
-        ..loadRequest(Uri.parse(embedUrl));
+      // Initialize YouTube player controller
+      _controller = YoutubePlayerController.fromVideoId(
+        videoId: videoId,
+        autoPlay: false,
+        params: const YoutubePlayerParams(
+          mute: false,
+          showControls: true, // Enable YouTube's native controls
+          enableCaption: true,
+          loop: false,
+          enableJavaScript: true,
+          playsInline: true,
+          origin: 'https://www.youtube-nocookie.com', // This helps with Error 15
+        ),
+      );
 
       // Set up position saving timer (save every 10 seconds)
       _positionSaveTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
@@ -271,283 +231,47 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
         }
       });
 
-      // Set up video readiness check timer
-      _timer = Timer.periodic(const Duration(seconds: 2), (timer) {
-        if (_mountedSafe && _controller != null) {
-          _checkVideoReadiness();
+      // Listen to player state changes
+      _controller!.listen((event) {
+        if (event is YoutubePlayerValue) {
+          setState(() {
+            _isPlaying = event.playerState == PlayerState.playing;
+          });
+          
+          // Handle YouTube errors - check for error states
+          if (event.playerState == PlayerState.unknown) {
+            log('YouTube Player Error: Player state is unknown');
+            log('This might indicate:');
+            log('1. Video is private or unlisted');
+            log('2. Video has embedding disabled');
+            log('3. Video is restricted in your region');
+            log('4. Video is age-restricted');
+            log('5. Network connectivity issues');
+          }
         }
       });
+
+      // Seek to saved position if available
+      if (_savedPosition.inSeconds > 0) {
+        Future.delayed(const Duration(seconds: 2), () {
+          if (_mountedSafe && _controller != null) {
+            _controller!.seekTo(seconds: _savedPosition.inSeconds.toDouble());
+          }
+        });
+      }
 
       setState(() {
         _isLoading = false;
         _isInitialized = true;
       });
 
-      log('WebView video player initialized successfully for video: $videoId');
+      log('YouTube player initialized successfully for video: $videoId');
     } catch (e) {
-      log('Error initializing WebView video player: $e');
+      log('Error initializing YouTube player: $e');
       setState(() {
         _isLoading = false;
         _isInitialized = false;
       });
-    }
-  }
-
-  /// Disable YouTube interactions to prevent navigation
-  void _disableYouTubeInteractions() {
-    if (_controller == null) return;
-    
-    try {
-      _controller!.runJavaScript('''
-        // Disable all clickable elements
-        document.addEventListener('click', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        }, true);
-        
-        // Disable right-click context menu
-        document.addEventListener('contextmenu', function(e) {
-          e.preventDefault();
-          return false;
-        });
-        
-        // Disable all links and buttons
-        var links = document.querySelectorAll('a, button, [onclick]');
-        links.forEach(function(link) {
-          link.style.pointerEvents = 'none';
-          link.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        });
-        
-        // Disable YouTube logo and channel name clicks
-        var logo = document.querySelector('#logo');
-        if (logo) {
-          logo.style.pointerEvents = 'none';
-          logo.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        }
-        
-        // Disable channel name clicks
-        var channelName = document.querySelector('#channel-name');
-        if (channelName) {
-          channelName.style.pointerEvents = 'none';
-          channelName.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        }
-        
-        // Disable subscribe button
-        var subscribeButton = document.querySelector('#subscribe-button');
-        if (subscribeButton) {
-          subscribeButton.style.pointerEvents = 'none';
-          subscribeButton.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        }
-        
-        // Disable all YouTube UI elements
-        var youtubeElements = document.querySelectorAll('[id*="youtube"], [class*="yt"], [href*="youtube"]');
-        youtubeElements.forEach(function(element) {
-          element.style.pointerEvents = 'none';
-          element.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        });
-      ''');
-    } catch (e) {
-      log('Error disabling YouTube interactions: $e');
-    }
-  }
-
-  /// Disable YouTube interactions for fullscreen
-  void _disableYouTubeInteractionsFullscreen() {
-    if (_fullscreenController == null) return;
-    
-    try {
-      _fullscreenController!.runJavaScript('''
-        // Disable all clickable elements
-        document.addEventListener('click', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        }, true);
-        
-        // Disable right-click context menu
-        document.addEventListener('contextmenu', function(e) {
-          e.preventDefault();
-          return false;
-        });
-        
-        // Disable all links and buttons
-        var links = document.querySelectorAll('a, button, [onclick]');
-        links.forEach(function(link) {
-          link.style.pointerEvents = 'none';
-          link.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        });
-        
-        // Disable YouTube logo and channel name clicks
-        var logo = document.querySelector('#logo');
-        if (logo) {
-          logo.style.pointerEvents = 'none';
-          logo.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        }
-        
-        // Disable channel name clicks
-        var channelName = document.querySelector('#channel-name');
-        if (channelName) {
-          channelName.style.pointerEvents = 'none';
-          channelName.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        }
-        
-        // Disable subscribe button
-        var subscribeButton = document.querySelector('#subscribe-button');
-        if (subscribeButton) {
-          subscribeButton.style.pointerEvents = 'none';
-          subscribeButton.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        }
-        
-        // Disable all YouTube UI elements
-        var youtubeElements = document.querySelectorAll('[id*="youtube"], [class*="yt"], [href*="youtube"]');
-        youtubeElements.forEach(function(element) {
-          element.style.pointerEvents = 'none';
-          element.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        });
-      ''');
-    } catch (e) {
-      log('Error disabling YouTube interactions in fullscreen: $e');
-    }
-  }
-
-  /// Set up video event listeners to track play state
-  void _setupVideoEventListeners() {
-    if (_controller == null) return;
-    
-    try {
-      _controller!.runJavaScript('''
-        // Wait for video element to be available and ready
-        function waitForVideo() {
-          var videoElement = document.querySelector("video");
-          if (videoElement) {
-            console.log('Video element found, readyState:', videoElement.readyState);
-            
-            // Set up event listeners
-            videoElement.addEventListener('loadstart', function() {
-              console.log('Video load started');
-            });
-            
-            videoElement.addEventListener('loadedmetadata', function() {
-              console.log('Video metadata loaded');
-            });
-            
-            videoElement.addEventListener('loadeddata', function() {
-              console.log('Video data loaded, readyState:', videoElement.readyState);
-            });
-            
-            videoElement.addEventListener('canplay', function() {
-              console.log('Video can start playing, readyState:', videoElement.readyState);
-              // Try to play the video when it's ready
-              if (videoElement.paused) {
-                videoElement.play().catch(function(error) {
-                  console.log('Auto-play failed:', error);
-                });
-              }
-            });
-            
-            videoElement.addEventListener('canplaythrough', function() {
-              console.log('Video can play through, readyState:', videoElement.readyState);
-            });
-            
-            videoElement.addEventListener('play', function() {
-              console.log('Video started playing');
-            });
-            
-            videoElement.addEventListener('pause', function() {
-              console.log('Video paused');
-            });
-            
-            // If video is already ready, try to play it
-            if (videoElement.readyState >= 2) {
-              console.log('Video already ready, readyState:', videoElement.readyState);
-              if (videoElement.paused) {
-                videoElement.play().catch(function(error) {
-                  console.log('Auto-play failed on ready video:', error);
-                });
-              }
-            }
-            
-            return true;
-          }
-          return false;
-        }
-        
-        // Try to set up listeners immediately
-        if (!waitForVideo()) {
-          // If video not ready, try again with increasing delays
-          var attempts = 0;
-          var maxAttempts = 15;
-          
-          function retryWaitForVideo() {
-            attempts++;
-            console.log('Attempt', attempts, 'to find video element');
-            
-            if (waitForVideo()) {
-              console.log('Video element found on attempt', attempts);
-            } else if (attempts < maxAttempts) {
-              setTimeout(retryWaitForVideo, 1000 * attempts); // Increasing delay
-            } else {
-              console.log('Max attempts reached, video element not found');
-            }
-          }
-          
-          setTimeout(retryWaitForVideo, 1000);
-        }
-      ''');
-    } catch (e) {
-      log('Error setting up video event listeners: $e');
-    }
-  }
-
-  /// Check if video is ready and update UI accordingly
-  void _checkVideoReadiness() {
-    if (_controller == null) return;
-    
-    try {
-      _controller!.runJavaScript('''
-        var videoElement = document.querySelector("video");
-        if (videoElement) {
-          console.log('Video readiness check - readyState:', videoElement.readyState, 'paused:', videoElement.paused);
-          
-          // If video is ready and we can control it
-          if (videoElement.readyState >= 2) {
-            console.log('Video is ready for control');
-          }
-        }
-      ''');
-    } catch (e) {
-      log('Error checking video readiness: $e');
     }
   }
 
@@ -561,25 +285,25 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
   }
 
   void _toggleFullScreen() {
-    if (_controller == null || _fullscreenController == null) return;
+    if (_controller == null) return;
     if (!_mountedSafe) return;
 
     setState(() {
       _isFullScreen = true;
     });
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
+    Navigator.push(
+      context,
+      MaterialPageRoute(
         builder: (context) => FullScreenVideoPage(
           url: widget.url,
           name: widget.name,
-          controller: _fullscreenController!,
+          controller: _controller!,
           initialPosition: _savedPosition,
           shouldAutoPlay: _isPlaying,
         ),
-        ),
-      ).then((_) {
+      ),
+    ).then((_) {
       if (!_mountedSafe) return;
       setState(() {
         _isFullScreen = false;
@@ -593,67 +317,9 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
     
     try {
       if (_isPlaying) {
-        _controller!.runJavaScript('''
-          setTimeout(function() {
-            var videoElement = document.querySelector("video");
-            if (videoElement && !videoElement.paused) {
-              videoElement.pause();
-            }
-          }, 200);
-        ''');
-        setState(() {
-          _isPlaying = false;
-        });
+        _controller!.pauseVideo();
       } else {
-        _controller!.runJavaScript('''
-          function tryPlayVideo() {
-            var videoElement = document.querySelector("video");
-            if (videoElement) {
-              console.log('Attempting to play video, readyState:', videoElement.readyState);
-              
-              if (videoElement.readyState >= 2) {
-                // Video is ready, try to play
-                var playPromise = videoElement.play();
-                if (playPromise !== undefined) {
-                  playPromise.then(function() {
-                    console.log('Video started playing successfully');
-                  }).catch(function(error) {
-                    console.log('Play failed:', error.name, error.message);
-                    // Try muted play as fallback
-                    videoElement.muted = true;
-                    videoElement.play().then(function() {
-                      videoElement.muted = false;
-                      console.log('Video started playing (muted first)');
-                    }).catch(function(err) {
-                      console.log('Play failed even with mute:', err.name, err.message);
-                    });
-                  });
-                }
-              } else {
-                console.log('Video not ready yet, readyState:', videoElement.readyState);
-                // Wait for video to be ready
-                videoElement.addEventListener('canplay', function() {
-                  console.log('Video can now play, readyState:', videoElement.readyState);
-                  var playPromise = videoElement.play();
-                  if (playPromise !== undefined) {
-                    playPromise.then(function() {
-                      console.log('Video started playing after canplay event');
-                    }).catch(function(error) {
-                      console.log('Play failed after canplay:', error.name, error.message);
-                    });
-                  }
-                }, { once: true });
-              }
-            } else {
-              console.log('Video element not found');
-            }
-          }
-          
-          setTimeout(tryPlayVideo, 500);
-        ''');
-        setState(() {
-          _isPlaying = true;
-        });
+        _controller!.playVideo();
       }
     } catch (e) {
       log('Error toggling play/pause: $e');
@@ -663,12 +329,9 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
   void _seekForward() {
     if (_controller == null) return;
     try {
-      _controller!.runJavaScript('''
-        var videoElement = document.querySelector("video");
-        if (videoElement) {
-          videoElement.currentTime += 10;
-        }
-      ''');
+      // For youtube_player_iframe, we'll use a simple approach
+      // Since we can't get current position easily, we'll just seek forward by 10 seconds
+      _controller!.seekTo(seconds: 10.0, allowSeekAhead: true);
     } catch (e) {
       log('Error seeking forward: $e');
     }
@@ -677,12 +340,9 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
   void _seekBackward() {
     if (_controller == null) return;
     try {
-      _controller!.runJavaScript('''
-        var videoElement = document.querySelector("video");
-        if (videoElement) {
-          videoElement.currentTime -= 10;
-        }
-      ''');
+      // For youtube_player_iframe, we'll use a simple approach
+      // Since we can't get current position easily, we'll just seek backward by 10 seconds
+      _controller!.seekTo(seconds: -10.0, allowSeekAhead: true);
     } catch (e) {
       log('Error seeking backward: $e');
     }
@@ -696,8 +356,8 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
     _positionSaveTimer?.cancel();
     _positionSaveTimer = null;
 
+    _controller?.close();
     _controller = null;
-    _fullscreenController = null;
     super.dispose();
   }
 
@@ -719,30 +379,6 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
                 // Video Player or Loading
                 if (_isLoading)
                   Container(
-                  height: 250,
-                  width: MediaQuery.of(context).size.width,
-                    color: Colors.black87,
-                    child: const Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                          CircularProgressIndicator(
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                          SizedBox(height: 16),
-                          Text(
-                            'Loading video...',
-                            style: TextStyle(
-                                    color: Colors.white,
-                              fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                    ),
-                  )
-                else if (!_isInitialized || _controller == null)
-                  Container(
                     height: 250,
                     width: MediaQuery.of(context).size.width,
                     color: Colors.black87,
@@ -750,18 +386,59 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
+                          CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            'Loading video...',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else if (!_isInitialized || _controller == null)
+                  Container(
+                    height: 250,
+                    width: MediaQuery.of(context).size.width,
+                    color: Colors.black87,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
                             Icons.error_outline,
                             color: Colors.red,
                             size: 48,
                           ),
-                          SizedBox(height: 16),
-                          Text(
+                          const SizedBox(height: 16),
+                          const Text(
                             'Failed to load video',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 16,
                             ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Error 15: Video may be private, restricted, or not available for embedding',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () {
+                              // Try to reload the video
+                              _initializeVideoPlayer();
+                            },
+                            child: const Text('Retry'),
                           ),
                         ],
                       ),
@@ -773,7 +450,10 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
                       SizedBox(
                         height: 250,
                         width: MediaQuery.of(context).size.width,
-                        child: WebViewWidget(controller: _controller!),
+                        child: YoutubePlayer(
+                          controller: _controller!,
+                          aspectRatio: 16 / 9,
+                        ),
                       ),
                       // White overlay to hide YouTube channel name and UI
                       Positioned(
@@ -850,13 +530,13 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
                               constraints: const BoxConstraints(
                                 minWidth: 36,
                                 minHeight: 36,
-                    ),
-                  ),
-                ),
+                              ),
+                            ),
+                          ),
                         ],
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),

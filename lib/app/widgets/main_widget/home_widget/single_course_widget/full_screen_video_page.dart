@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FullScreenVideoPage extends StatefulWidget {
   final String url;
   final String name;
-  final WebViewController controller;
+  final YoutubePlayerController controller;
   final Duration initialPosition;
   final bool shouldAutoPlay;
 
@@ -44,6 +44,15 @@ class _FullScreenVideoPageState extends State<FullScreenVideoPage> {
       }
     });
 
+    // Listen to player state changes
+    widget.controller.listen((event) {
+      if (event is YoutubePlayerValue) {
+        setState(() {
+          _isPlaying = event.playerState == PlayerState.playing;
+        });
+      }
+    });
+
     // Use a post-frame callback to ensure the widget's build is complete
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_mountedSafe) return;
@@ -57,7 +66,14 @@ class _FullScreenVideoPageState extends State<FullScreenVideoPage> {
         });
       }
       
-      // YouTube interactions are now allowed
+      // Seek to initial position if available
+      if (widget.initialPosition.inSeconds > 0) {
+        Future.delayed(const Duration(seconds: 1), () {
+          if (_mountedSafe) {
+            widget.controller.seekTo(seconds: widget.initialPosition.inSeconds.toDouble());
+          }
+        });
+      }
     });
   }
 
@@ -66,59 +82,7 @@ class _FullScreenVideoPageState extends State<FullScreenVideoPage> {
   /// Play the video
   void _playVideo() {
     try {
-      widget.controller.runJavaScript('''
-        function tryPlayVideo() {
-          var videoElement = document.querySelector("video");
-          if (videoElement) {
-            console.log('Fullscreen video element found, readyState:', videoElement.readyState);
-            
-            if (videoElement.readyState >= 2) {
-              var playPromise = videoElement.play();
-              if (playPromise !== undefined) {
-                playPromise.then(function() {
-                  console.log('Fullscreen video started playing');
-                }).catch(function(error) {
-                  console.log('Fullscreen play failed:', error.name, error.message);
-                  // Try muted play as fallback
-                  videoElement.muted = true;
-                  videoElement.play().then(function() {
-                    videoElement.muted = false;
-                    console.log('Fullscreen video started playing (muted first)');
-                  }).catch(function(err) {
-                    console.log('Fullscreen play failed even with mute:', err.name, err.message);
-                  });
-                });
-              }
-            } else {
-              console.log('Fullscreen video not ready, readyState:', videoElement.readyState);
-              // Wait for video to be ready
-              videoElement.addEventListener('canplay', function() {
-                console.log('Fullscreen video can now play, readyState:', videoElement.readyState);
-                var playPromise = videoElement.play();
-                if (playPromise !== undefined) {
-                  playPromise.then(function() {
-                    console.log('Fullscreen video started playing after canplay event');
-                  }).catch(function(error) {
-                    console.log('Fullscreen play failed after canplay:', error.name, error.message);
-                    // Try muted play as fallback
-                    videoElement.muted = true;
-                    videoElement.play().then(function() {
-                      videoElement.muted = false;
-                      console.log('Fullscreen video started playing (muted first) after canplay');
-                    }).catch(function(err) {
-                      console.log('Fullscreen play failed even with mute after canplay:', err.name, err.message);
-                    });
-                  });
-                }
-              }, { once: true });
-            }
-          } else {
-            console.log('Fullscreen video element not found');
-          }
-        }
-        
-        setTimeout(tryPlayVideo, 500);
-      ''');
+      widget.controller.playVideo();
       setState(() {
         _isPlaying = true;
       });
@@ -130,12 +94,7 @@ class _FullScreenVideoPageState extends State<FullScreenVideoPage> {
   /// Pause the video
   void _pauseVideo() {
     try {
-      widget.controller.runJavaScript('''
-        var videoElement = document.querySelector("video");
-        if (videoElement) {
-          videoElement.pause();
-        }
-      ''');
+      widget.controller.pauseVideo();
       setState(() {
         _isPlaying = false;
       });
@@ -150,6 +109,7 @@ class _FullScreenVideoPageState extends State<FullScreenVideoPage> {
       final prefs = await SharedPreferences.getInstance();
       final String? videoId = _extractVideoId(widget.url);
       if (videoId != null) {
+        // For youtube_player_iframe, we'll save a timestamp when the video starts playing
         final int currentSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
         await prefs.setInt('video_position_$videoId', currentSeconds);
         log('Fullscreen: Saved position timestamp for video: $videoId');
@@ -159,90 +119,10 @@ class _FullScreenVideoPageState extends State<FullScreenVideoPage> {
     }
   }
 
-  /// Disable YouTube interactions to prevent navigation
-  void _disableYouTubeInteractions() {
-    try {
-      widget.controller.runJavaScript('''
-        // Disable all clickable elements
-        document.addEventListener('click', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        }, true);
-        
-        // Disable right-click context menu
-        document.addEventListener('contextmenu', function(e) {
-          e.preventDefault();
-          return false;
-        });
-        
-        // Disable all links and buttons
-        var links = document.querySelectorAll('a, button, [onclick]');
-        links.forEach(function(link) {
-          link.style.pointerEvents = 'none';
-          link.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        });
-        
-        // Disable YouTube logo and channel name clicks
-        var logo = document.querySelector('#logo');
-        if (logo) {
-          logo.style.pointerEvents = 'none';
-          logo.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        }
-        
-        // Disable channel name clicks
-        var channelName = document.querySelector('#channel-name');
-        if (channelName) {
-          channelName.style.pointerEvents = 'none';
-          channelName.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        }
-        
-        // Disable subscribe button
-        var subscribeButton = document.querySelector('#subscribe-button');
-        if (subscribeButton) {
-          subscribeButton.style.pointerEvents = 'none';
-          subscribeButton.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        }
-        
-        // Disable all YouTube UI elements
-        var youtubeElements = document.querySelectorAll('[id*="youtube"], [class*="yt"], [href*="youtube"]');
-        youtubeElements.forEach(function(element) {
-          element.style.pointerEvents = 'none';
-          element.onclick = function(e) {
-            e.preventDefault();
-            return false;
-          };
-        });
-      ''');
-    } catch (e) {
-      log('Error disabling YouTube interactions: $e');
-    }
-  }
-
   /// Extract video ID from YouTube URL
   String? _extractVideoId(String url) {
     try {
-      final uri = Uri.parse(url);
-      if (uri.host.contains('youtube.com') || uri.host.contains('youtu.be')) {
-        if (uri.host.contains('youtu.be')) {
-          return uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
-        } else {
-          return uri.queryParameters['v'];
-        }
-      }
-      return null;
+      return YoutubePlayerController.convertUrlToId(url);
     } catch (e) {
       log('Error extracting video ID: $e');
       return null;
@@ -285,7 +165,7 @@ class _FullScreenVideoPageState extends State<FullScreenVideoPage> {
     // Save final position before disposing
     _saveCurrentPosition();
     
-    // Do NOT dispose the controller here; it is passed from PodVideoPlayerDev
+    // Do NOT close the controller here; it is passed from PodVideoPlayerDev
     // Also do not force portrait orientation here; let the page popping handle it
     super.dispose();
   }
@@ -298,18 +178,21 @@ class _FullScreenVideoPageState extends State<FullScreenVideoPage> {
         return true; // proceed with the pop
       },
       child: Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Stack(
-          children: [
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: Stack(
+            children: [
               // Video Player with overlay
-            Center(
+              Center(
                 child: Stack(
                   children: [
                     SizedBox(
                       height: MediaQuery.of(context).size.height,
                       width: MediaQuery.of(context).size.width,
-                      child: WebViewWidget(controller: widget.controller),
+                      child: YoutubePlayer(
+                        controller: widget.controller,
+                        aspectRatio: 16 / 9,
+                      ),
                     ),
                     // White overlay to hide YouTube channel name and UI
                     Positioned(
@@ -327,28 +210,28 @@ class _FullScreenVideoPageState extends State<FullScreenVideoPage> {
                 ),
               ),
               // Back button
-            Positioned(
-              top: 20,
-              left: 20,
+              Positioned(
+                top: 20,
+                left: 20,
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.5),
                     borderRadius: BorderRadius.circular(20),
                   ),
-              child: IconButton(
+                  child: IconButton(
                     icon: const Icon(Icons.arrow_back, color: Colors.white),
-                onPressed: () {
+                    onPressed: () {
                       _resetOrientation();
-                    Navigator.pop(context);
-                },
-              ),
-            ),
+                      Navigator.pop(context);
+                    },
+                  ),
+                ),
               ),
               // Play/Pause button
               Positioned(
                 top: 20,
                 right: 20,
-              child: Container(
+                child: Container(
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.5),
                     borderRadius: BorderRadius.circular(20),
@@ -369,7 +252,7 @@ class _FullScreenVideoPageState extends State<FullScreenVideoPage> {
                 ),
               ),
             ],
-            ),
+          ),
         ),
       ),
     );

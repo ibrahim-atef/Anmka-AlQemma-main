@@ -66,7 +66,7 @@ dependencies:
   webview_flutter: ^4.4.2
 
 #  modern_player: ^0.1.0
-  youtube_player_flutter: ^9.0.4
+  youtube_player_iframe: ^5.1.2
 
   flutter_tts: ^4.0.2
   table_calendar: ^3.0.9
