@@ -11,6 +11,7 @@ import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'package:screen_protector/screen_protector.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher_string.dart';
+import 'package:webinar/app/widgets/main_widget/home_widget/single_course_widget/youTube_web_view.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import 'package:webinar/app/models/content_model.dart';
 import 'package:webinar/app/models/note_model.dart';
@@ -46,12 +47,12 @@ class PodVideoPlayerDev extends StatefulWidget {
   final RouteObserver<ModalRoute<void>> routeObserver;
 
   const PodVideoPlayerDev(
-      this.url,
-      this.type,
-      this.routeObserver, {
-        Key? key,
-        required this.name,
-      }) : super(key: key);
+    this.url,
+    this.type,
+    this.routeObserver, {
+    super.key,
+    required this.name,
+  });
 
   /// Clear saved position for a specific video
   static Future<void> clearSavedPosition(String url) async {
@@ -72,12 +73,13 @@ class PodVideoPlayerDev extends StatefulWidget {
     try {
       final prefs = await SharedPreferences.getInstance();
       final keys = prefs.getKeys();
-      final videoPositionKeys = keys.where((key) => key.startsWith('video_position_'));
-      
+      final videoPositionKeys =
+          keys.where((key) => key.startsWith('video_position_'));
+
       for (final key in videoPositionKeys) {
         await prefs.remove(key);
       }
-      
+
       log('Cleared all saved video positions');
     } catch (e) {
       log('Error clearing all saved positions: $e');
@@ -107,19 +109,20 @@ class PodVideoPlayerDev extends StatefulWidget {
     try {
       // Try different URL formats
       String? videoId = YoutubePlayerController.convertUrlToId(url);
-      
+
       // If the standard method fails, try manual extraction
       if (videoId == null || videoId.isEmpty) {
         final uri = Uri.parse(url);
         if (uri.host.contains('youtube.com') || uri.host.contains('youtu.be')) {
           if (uri.host.contains('youtu.be')) {
-            videoId = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
+            videoId =
+                uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
           } else {
             videoId = uri.queryParameters['v'];
           }
         }
       }
-      
+
       log('Extracted video ID: $videoId from URL: $url');
       return videoId;
     } catch (e) {
@@ -134,8 +137,8 @@ class PodVideoPlayerDev extends StatefulWidget {
 
 class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
   bool _isFullScreen = false;
-  double _watermarkPositionX = 0.0;
-  double _watermarkPositionY = 0.0;
+  final double _watermarkPositionX = 0.0;
+  final double _watermarkPositionY = 0.0;
   Timer? _timer;
   YoutubePlayerController? _controller;
   bool _disposed = false;
@@ -178,13 +181,14 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
   /// Save current video position to SharedPreferences
   Future<void> _saveCurrentPosition() async {
     if (_controller == null) return;
-    
+
     try {
       final prefs = await SharedPreferences.getInstance();
       final String? videoId = PodVideoPlayerDev._extractVideoId(widget.url);
       if (videoId != null) {
         // For youtube_player_iframe, we'll save a timestamp when the video starts playing
-        final int currentSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        final int currentSeconds =
+            DateTime.now().millisecondsSinceEpoch ~/ 1000;
         await prefs.setInt('video_position_$videoId', currentSeconds);
         log('Saved position timestamp for video: $videoId');
       }
@@ -198,7 +202,7 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
     final String? videoId = PodVideoPlayerDev._extractVideoId(widget.url);
     log("Video URL: ${widget.url}");
     log("Extracted Video ID: $videoId");
-    
+
     if (videoId == null || videoId.isEmpty) {
       log("Warning: Invalid or no video ID found in URL: ${widget.url}");
       setState(() {
@@ -220,7 +224,8 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
           loop: false,
           enableJavaScript: true,
           playsInline: true,
-          origin: 'https://www.youtube-nocookie.com', // This helps with Error 15
+          origin:
+              'https://www.youtube-nocookie.com', // This helps with Error 15
         ),
       );
 
@@ -233,21 +238,19 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
 
       // Listen to player state changes
       _controller!.listen((event) {
-        if (event is YoutubePlayerValue) {
-          setState(() {
-            _isPlaying = event.playerState == PlayerState.playing;
-          });
-          
-          // Handle YouTube errors - check for error states
-          if (event.playerState == PlayerState.unknown) {
-            log('YouTube Player Error: Player state is unknown');
-            log('This might indicate:');
-            log('1. Video is private or unlisted');
-            log('2. Video has embedding disabled');
-            log('3. Video is restricted in your region');
-            log('4. Video is age-restricted');
-            log('5. Network connectivity issues');
-          }
+        setState(() {
+          _isPlaying = event.playerState == PlayerState.playing;
+        });
+
+        // Handle YouTube errors - check for error states
+        if (event.playerState == PlayerState.unknown) {
+          log('YouTube Player Error: Player state is unknown');
+          log('This might indicate:');
+          log('1. Video is private or unlisted');
+          log('2. Video has embedding disabled');
+          log('3. Video is restricted in your region');
+          log('4. Video is age-restricted');
+          log('5. Network connectivity issues');
         }
       });
 
@@ -295,13 +298,7 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => FullScreenVideoPage(
-          url: widget.url,
-          name: widget.name,
-          controller: _controller!,
-          initialPosition: _savedPosition,
-          shouldAutoPlay: _isPlaying,
-        ),
+        builder: (context) => YouTubeWebView(videoUrl: widget.url),
       ),
     ).then((_) {
       if (!_mountedSafe) return;
@@ -312,9 +309,38 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
     });
   }
 
+  // void _toggleFullScreen() {
+  //   if (_controller == null) return;
+  //   if (!_mountedSafe) return;
+
+  //   setState(() {
+  //     _isFullScreen = true;
+  //   });
+
+  //   Navigator.push(
+  //     context,
+  //     MaterialPageRoute(
+  //       builder: (context) => CleanYouTubeWebView(videoUrl: widget.url),
+  //       //  FullScreenVideoPage(
+  //       //   url: widget.url,
+  //       //   name: widget.name,
+  //       //   controller: _controller!,
+  //       //   initialPosition: _savedPosition,
+  //       //   shouldAutoPlay: _isPlaying,
+  //       // ),
+  //     ),
+  //   ).then((_) {
+  //     if (!_mountedSafe) return;
+  //     setState(() {
+  //       _isFullScreen = false;
+  //     });
+  //     _setPortraitOrientation();
+  //   });
+  // }
+
   void _togglePlayPause() {
     if (_controller == null) return;
-    
+
     try {
       if (_isPlaying) {
         _controller!.pauseVideo();
@@ -387,7 +413,8 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           CircularProgressIndicator(
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                           SizedBox(height: 16),
                           Text(
@@ -473,7 +500,7 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
                       ),
                     ],
                   ),
-                
+
                 // Bottom Controls Bar (only show when video is ready)
                 if (_isInitialized && _controller != null)
                   Positioned(
@@ -481,7 +508,8 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
                     left: 0,
                     right: 0,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
                       color: Colors.black.withOpacity(0.2),
                       child: Row(
                         children: [

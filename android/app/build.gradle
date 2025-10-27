@@ -34,7 +34,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace "com.anmka.elqemmaacademy"
-    compileSdk 34
+    compileSdk 36
     ndkVersion "26.1.10909125"
 
 
