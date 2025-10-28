@@ -1,44 +1,11 @@
 import 'dart:async';
 import 'dart:developer';
-import 'dart:io';
 
-import 'package:add_2_calendar/add_2_calendar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/svg.dart';
-import 'package:flutter_tts/flutter_tts.dart';
-import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
-import 'package:screen_protector/screen_protector.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher_string.dart';
 import 'package:webinar/app/widgets/main_widget/home_widget/single_course_widget/youTube_web_view.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
-import 'package:webinar/app/models/content_model.dart';
-import 'package:webinar/app/models/note_model.dart';
-import 'package:webinar/app/models/single_content_model.dart';
-import 'package:webinar/app/pages/main_page/home_page/single_course_page/single_content_page/pdf_viewer_page.dart';
-import 'package:webinar/app/pages/main_page/home_page/single_course_page/single_content_page/web_view_page.dart';
-import 'package:webinar/app/services/guest_service/course_service.dart';
-import 'package:webinar/app/services/user_service/personal_note_service.dart';
-import 'package:webinar/common/common.dart';
-import 'package:webinar/common/components.dart';
-import 'package:webinar/common/data/api_public_data.dart';
-import 'package:webinar/common/data/app_data.dart';
-import 'package:webinar/common/data/app_language.dart';
-import 'package:webinar/common/enums/error_enum.dart';
-import 'package:webinar/common/utils/app_text.dart';
-import 'package:webinar/common/utils/constants.dart';
-import 'package:webinar/config/colors.dart';
-import 'package:webinar/config/styles.dart';
-import 'package:html/parser.dart';
-import 'package:webinar/locator.dart';
-
-import '../../../../../../common/utils/date_formater.dart';
-import '../../../../../../config/assets.dart';
-
-import '../../../../widgets/main_widget/home_widget/single_course_widget/course_video_player.dart';
-
-import 'full_screen_video_page.dart';
 
 class PodVideoPlayerDev extends StatefulWidget {
   final String type;
@@ -219,7 +186,7 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
         autoPlay: false,
         params: const YoutubePlayerParams(
           mute: false,
-          showControls: true, // Enable YouTube's native controls
+          showControls: false, // Hide native controls (we render our own)
           enableCaption: true,
           loop: false,
           enableJavaScript: true,
