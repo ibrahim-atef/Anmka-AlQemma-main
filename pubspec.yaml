@@ -67,6 +67,7 @@ dependencies:
 
 #  modern_player: ^0.1.0
   youtube_player_iframe: ^5.1.2
+  pod_player: ^0.2.2
 
   flutter_tts: ^4.0.2
   table_calendar: ^3.0.9
