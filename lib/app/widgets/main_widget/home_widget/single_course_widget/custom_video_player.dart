@@ -133,6 +133,19 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
   bool _hasInitializationError = false;
   Duration _savedPosition = Duration.zero;
   Timer? _positionSaveTimer;
+  Timer? _watermarkTimer;
+  Alignment _watermarkAlignment = const Alignment(-0.9, -0.9);
+  int _watermarkAlignmentIndex = 0;
+
+  static const List<Alignment> _watermarkPositions = [
+    Alignment(-0.9, -0.9),
+    Alignment(0.0, -0.6),
+    Alignment(0.9, -0.9),
+    Alignment(0.9, 0.0),
+    Alignment(0.6, 0.9),
+    Alignment(-0.2, 0.9),
+    Alignment(-0.9, 0.2),
+  ];
 
   @override
   void initState() {
@@ -143,6 +156,7 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
       if (!_mountedSafe) return;
       _initializeVideoPlayer();
     });
+    _startWatermarkAnimation();
   }
 
   Future<void> _loadSavedPosition() async {
@@ -269,6 +283,18 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
     }
   }
 
+  void _startWatermarkAnimation() {
+    _watermarkTimer?.cancel();
+    _watermarkTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!_mountedSafe) return;
+      setState(() {
+        _watermarkAlignmentIndex =
+            (_watermarkAlignmentIndex + 1) % _watermarkPositions.length;
+        _watermarkAlignment = _watermarkPositions[_watermarkAlignmentIndex];
+      });
+    });
+  }
+
   bool get _mountedSafe => mounted && !_disposed;
 
   @override
@@ -276,6 +302,8 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
     _disposed = true;
     _positionSaveTimer?.cancel();
     _positionSaveTimer = null;
+    _watermarkTimer?.cancel();
+    _watermarkTimer = null;
 
     _controller?.dispose();
     _controller = null;
@@ -309,14 +337,40 @@ class _PodVideoPlayerDevState extends State<PodVideoPlayerDev> {
       return _buildErrorState(context);
     }
 
-    return Container(
-      color: Colors.black,
-      child: PodVideoPlayer(
-        controller: _controller!,
-        podProgressBarConfig: const PodProgressBarConfig(
-          padding: EdgeInsets.symmetric(horizontal: 16),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Container(
+          color: Colors.black,
+          child: PodVideoPlayer(
+            controller: _controller!,
+            podProgressBarConfig: const PodProgressBarConfig(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+            ),
+          ),
         ),
-      ),
+        if (widget.name.isNotEmpty)
+          AnimatedAlign(
+            alignment: _watermarkAlignment,
+            duration: const Duration(milliseconds: 600),
+            curve: Curves.easeInOut,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              // decoration: BoxDecoration(
+              //   color: Colors.black.withOpacity(0.6),
+              //   borderRadius: BorderRadius.circular(12),
+              // ),
+              child: Text(
+                widget.name,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
